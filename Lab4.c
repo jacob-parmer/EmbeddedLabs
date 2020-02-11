@@ -1,7 +1,7 @@
 /*====================================================*/
 /* Jacob Parmer, Austin Harris */
-/* ELEC 3040/3050 - Lab 3, Program 1 */
-/* Count up or down from 0-9 on PC[0:7] depending on values of input switches */
+/* ELEC 3040/3050 - Lab 4, Program 1 */
+/* Count up or down from 0-9 on PC[0:7] depending on value of count_increasing*/
 /*====================================================*/
 #include "STM32L1xx.h" /* Microcontroller information */
 
@@ -13,6 +13,8 @@ uint16_t count;
 uint16_t count2;
 uint16_t sw1;
 uint16_t sw2;
+uint16_t toggle;
+uint16_t toggle2;
 bool count_increasing = true;
 
 /*---------------------------------------------------*/
@@ -26,8 +28,8 @@ void pinSetup () {
 	GPIOA->MODER &= ~(0x00000000F); /* General purpose input mode for PA0 and PA1 */
 	
 	RCC->AHBENR |= 0x04; /* Enable GPIOC clock (bit 2) */
-	GPIOC->MODER &= ~(0x0000FFFF);
-	GPIOC->MODER |= 0x00005555; /* Output mode for PC[0:7] */
+	GPIOC->MODER &= ~(0x000FFFFF);
+	GPIOC->MODER |= 0x00055555; /* Output mode for PC[0:7] */
 
 }
 
@@ -35,7 +37,7 @@ void interruptSetup() {
 	
 	SYSCFG->EXTICR[0] &= ~(0x00FF);
 	
-	EXTI->RTSR |= 0x000003; // allows for interrupts at clock rising edge
+	EXTI->FTSR |= 0x000003; // allows for interrupts at clock rising edge
 	EXTI->IMR |= 0x000003; // enables interrupt request lines for EXTI0 and EXTI1.
 	
 	NVIC_EnableIRQ(EXTI0_IRQn); // enable external interrupt EXTI0 and EXTI1
@@ -93,12 +95,30 @@ void counter2() {
 
 void EXTI0_IRQHandler(void) {
 	count_increasing = false;
+	if (toggle == 0x0000) {
+		toggle = 0x0100;
+	} else {
+		toggle = 0x0000;
+	}
+	GPIOC->ODR &= 0x0000;
+	GPIOC->ODR |= (count | count2 | toggle | toggle2);
 	EXTI->PR |= 0x000001;
 	NVIC_ClearPendingIRQ(EXTI0_IRQn);
 }
 
 void EXTI1_IRQHandler(void) {
 	count_increasing = true;
+	if (toggle2 == 0x0000) {
+		toggle2 = 0x0200;
+	} else {
+		toggle2 = 0x0000;
+	}
+	int i, n;
+	for (i=0; i<50000; i++) { //outer loop
+			n = i; //dummy operation for single-step test
+	}
+	GPIOC->ODR &= 0x0000;
+	GPIOC->ODR |= (count | count2 | toggle | toggle2);
 	EXTI->PR |= 0x000002;
 	NVIC_ClearPendingIRQ(EXTI1_IRQn);
 }
@@ -111,6 +131,8 @@ int main(void) {
 	interruptSetup(); // Configure interrupt pins
 	count = 0x0001;
 	count2 = 0x0010;
+	toggle = 0x0000;
+	toggle2 = 0x0000;
 	bool count2_enable = false;
 	
  /* Endless loop */
@@ -126,7 +148,7 @@ int main(void) {
 			count2_enable = true;
 		}
 		GPIOC->ODR &= 0x00;
-		GPIOC->ODR |= (count | count2); // Outputs count to pins PC[0:3], and count2 to pins PC[4:7].
+		GPIOC->ODR |= (count | count2 | toggle | toggle2); // Outputs count to pins PC[0:3], and count2 to pins PC[4:7].
 		delay();
 	} /* repeat forever */
 }
