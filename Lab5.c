@@ -1,7 +1,7 @@
 /*====================================================*/
 /* Jacob Parmer, Austin Harris */
-/* ELEC 3040/3050 - Lab 3, Program 1 */
-/* Count up or down from 0-9 on PC[0:7] depending on values of input switches */
+/* ELEC 3040/3050 - Lab 5, Program 1 */
+/* Count up from 0-9, display count or input from 0-9 keypad */
 /*====================================================*/
 #include "STM32L1xx.h" /* Microcontroller information */
 
@@ -25,13 +25,15 @@ void pinSetup () {
 	
 	RCC->AHBENR |= 0x02; /*Enable GPIOB clock (bit 1) */
 	GPIOB->MODER &= ~(0x0000FFFF); /* General purpose input mode for PB[0:7] */
+	GPIOB->MODER |= 0x00005500; /* Output mode for PB[4:7] */
 	
 	RCC->AHBENR |= 0x04; /* Enable GPIOC clock (bit 2) */
 	GPIOC->MODER &= ~(0x000000FF);
 	GPIOC->MODER |= 0x00000055; /* Output mode for PC[0:3] */
 	
 	GPIOB->PUPDR &= 0x00000000;
-	GPIOB->PUPDR |= 0x0000AAAA; // pulls down pins PB[0:7]
+	GPIOB->PUPDR |= 0x00000055; // pulls up pins PB[0:3]
+	GPIOB->ODR &= ~(0x00F0);
 
 }
 
@@ -39,7 +41,7 @@ void interruptSetup() {
 	
 	SYSCFG->EXTICR[0] &= ~(0x000F);
 	
-	EXTI->RTSR |= 0x000002; // allows for interrupts at clock rising edge
+	EXTI->FTSR |= 0x000002; // allows for interrupts at clock falling edge
 	EXTI->IMR |= 0x000002; // enables interrupt request lines for EXTI1.
 	
 	NVIC_EnableIRQ(EXTI1_IRQn); // enable external interrupt EXTI1
@@ -84,30 +86,32 @@ void scan() {
 	uint16_t row_selected;
 	int i;
 	
-	GPIOB->PUPDR &= 0x00000000;
-	GPIOB->PUPDR |= 0x55565555;	// pulls up all columns and rows except for PB[8], which is pulled down
+	GPIOB->MODER &= ~(0x0000FFFF); /* General purpose input mode for PB[0:7] */
+	GPIOB->MODER |= 0x00005500; /* Output mode for PB[4:7] */
 	
-	GPIOB->PUPDR = GPIOB->PUPDR>>2; // shifts pulldown register to the right by 2. Making PB[7] pulled down.
 	
-	for (i=4; i>0; i--) { // loops through 4 columns from right to left
+	GPIOB->PUPDR &= 0x000000FF;
+	GPIOB->ODR = 0xFF7F;
+	
+	for (i=0; i<4; i++) { // loops through 4 columns from right to left
 		
-		delay(10);
+		delay(5);
 		
 		switch (GPIOB->IDR & 0x000F) {
 			case 0x000E:
-				row_selected = 0;
+				row_selected = 3;
 				keypress_found = true;
 				break;
 			case 0x000D:
-				row_selected = 1;
-				keypress_found = true;
-				break;
-			case 0x000B:
 				row_selected = 2;
 				keypress_found = true;
 				break;
+			case 0x000B:
+				row_selected = 1;
+				keypress_found = true;
+				break;
 			case 0x0007:
-				row_selected = 3;
+				row_selected = 0;
 				keypress_found = true;
 				break;
 			default:
@@ -115,21 +119,20 @@ void scan() {
 		}
 		
 		if (keypress_found == true) {
-			key_selected = keypad[row_selected][i-1];
+			key_selected = keypad[row_selected][i];
 			display_key = true;
 			keypress_found = false;
 		}
 			
-			GPIOB->PUPDR = GPIOB->PUPDR>>2;
+		GPIOB->ODR = GPIOB->ODR>>1;
 	} 
 }
 void EXTI1_IRQHandler(void) {
 
 	scan();
-	delay(200); // delay to prevent retriggering interrupt due to bouncing
+	delay(100); // delay to prevent retriggering interrupt due to bouncing
 	
-	GPIOB->PUPDR &= 0x00000000;
-	GPIOB->PUPDR |= 0x0000AAAA; // pulls down pins PB[0:7]
+	pinSetup();
 	
 	EXTI->PR |= 0x000002; // clears interrupt pending bits
 	NVIC_ClearPendingIRQ(EXTI1_IRQn);
@@ -155,13 +158,13 @@ int main(void) {
 			if (key_display_timer != 5)
 			{	
 				GPIOC->ODR &= 0x00;
-				GPIOC->ODR &= key_selected;
+				GPIOC->ODR |= key_selected;
 				key_display_timer++;
 				delay(20000);
 			} else
 			{			
 				GPIOC->ODR &= 0x00;
-				GPIOC->ODR &= count;
+				GPIOC->ODR |= count;
 				key_display_timer = 0;
 				display_key = false;
 				delay(20000);			
