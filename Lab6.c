@@ -12,6 +12,8 @@ typedef enum {false, true} bool;
 uint16_t count_integer;
 uint16_t count_decimal;
 uint16_t key_selected;
+bool timer_enabled = false;
+bool action_taken = false;
 
 /*---------------------------------------------------*/
 /* Initialize GPIO pins used in the program */
@@ -61,14 +63,27 @@ void interruptSetup() {
 /*--------------------------------------------------------*/
 void timerSetup() {
 	
+	RCC->APB2ENR |= RCC_APB2ENR_TIM10EN;	// enables clock timer
+	TIM10->DIER |= TIM_DIER_UIE;  // enables TIM10
+	
 	TIM10->ARR &= 0x0000;
-	TIM10->ARR |= 0x0347; // sets Auto Reload value to 839
+	TIM10->ARR |= 0x1FFF; // sets Auto Reload value
 	
 	TIM10->PSC &= 0x0000;
-	TIM10->PSC |= 0x00FA; // sets Prescale value to 250
-	
-	TIM10->DIER |= TIM_DIER_UIE;  // enables TIM10
-	RCC->APB2ENR |= RCC_APB2ENR_TIM10EN;	// enables clock timer
+	TIM10->PSC |= 0x000F; // sets Prescale value
+}
+
+/*----------------------------------------------------------*/
+/* Delay function - do nothing for delayTime */
+/* delayTime = 20,000 = roughly a second. */
+/*----------------------------------------------------------*/
+void delay (int delayTime) {
+	int i,j,n;
+	for (i=0; i<20; i++) { //outer loop
+		for (j=0; j<delayTime; j++) { //inner loop
+			n = j; //dummy operation for single-step test
+		} //do nothing
+	}
 }
 
 /*---------------------------------------------------*/
@@ -155,6 +170,7 @@ void EXTI1_IRQHandler(void) {
 	
 	pinSetup();
 	
+	action_taken = false;
 	EXTI->PR |= 0x000002; // clears interrupt pending bits
 	NVIC_ClearPendingIRQ(EXTI1_IRQn);
 }
@@ -163,10 +179,11 @@ void EXTI1_IRQHandler(void) {
 /* */
 void TIM10_IRQHandler(void) {
 	
+	counter();
+	TIM10->SR &= ~TIM_SR_UIF;
 	EXTI->PR |= 0x000002; // clears interrupt pending bits
 	NVIC_ClearPendingIRQ(TIM10_IRQn);
 }
-
 
 /*------------------------------------------------*/
 /* 					Main program					  	  */
@@ -175,17 +192,41 @@ int main(void) {
 
 	pinSetup(); // Configure GPIO pins
 	interruptSetup(); // Configure interrupt pins
-	timerSetup();	// Configure timer pins
 	key_selected = 0xFFFF;
-	TIM10->CR1 |= TIM_CR1_CEN; 
+	
 	count_integer = 0x0000;
 	count_decimal = 0x0000;
 
+	while (key_selected != 0x0000) {} // do nothing
+	
+	action_taken = true; // setting this to true prevents while (1) running keypress multiple times
+	timer_enabled = true; // allows us to check if timer is currently running
+	timerSetup();	// Configure timer pins
+	TIM10->CR1 |= TIM_CR1_CEN; 
+	
  /* Endless loop */
 	while (1) {
 		
+		if (key_selected == 0x0000 & action_taken == false) { // checks for keypress of key 0
+				if (timer_enabled == true) {
+					timer_enabled = false;
+					action_taken = true;
+					TIM10->CR1 &= ~TIM_CR1_CEN; // disables timer clock
+				} else {
+					timer_enabled = true;
+					action_taken = true;
+					TIM10->CR1 |= TIM_CR1_CEN; // enables timer clock
+				}
+		}
+		
+		if (key_selected == 0x0001 & action_taken == false) { // checks for keypress of key 1
+			if (timer_enabled == false) {
+				count_integer = 0x0000;
+				count_decimal = 0x0000;
+				action_taken = true;
+			}
+		}
 		GPIOC->ODR &= 0x00;
 		GPIOC->ODR |= (count_integer | count_decimal); // Outputs count to pins PC[0:7].
-
 	} /* repeat forever */
 }
