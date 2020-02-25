@@ -10,10 +10,7 @@ typedef enum {false, true} bool;
 /* Define global variables */
 
 uint16_t key_selected;
-uint16_t period;
-uint16_t duty_cycle;
-uint16_t timer_interrupts;
-
+uint16_t duty;
 /*---------------------------------------------------*/
 /* Initialize GPIO pins used in the program */
 /* PA1 = keypad interrupt input */
@@ -24,8 +21,12 @@ uint16_t timer_interrupts;
 void pinSetup () {
 
 	RCC->AHBENR |= 0x07; /* Enable GPIOA clock (bits 2-0) */
-	GPIOA->MODER &= ~(0x00000F00C); /* General purpose input mode for PA1 */
+	
+	GPIOA->MODER &= ~(0x00000300C); /* General purpose input mode for PA1 */
 	GPIOA->MODER |= 0x000002000; // AF mode for PA6
+	
+	GPIOA->AFR[0] &= ~(0x0F000000); // clear AFRL6
+	GPIOA->AFR[0] |= 0x03000000; // PA6 = AF3 
 	
 	GPIOB->MODER &= ~(0x0000FFFF); /* General purpose input mode for PB[0:7] */
 	GPIOB->MODER |= 0x00005500; /* Output mode for PB[4:7] */
@@ -77,6 +78,7 @@ void timerSetup() {
 	TIM10->PSC &= 0x0000;
 	TIM10->PSC |= 0x000F; // sets Prescale value
 	
+	TIM10->CCMR1 &= ~(0x73);
 	TIM10->CCMR1 |= 0x60;
 }
 
@@ -144,7 +146,8 @@ void scan() {
 			key_selected = keypad[row_selected][i];
 			keypress_found = false;
 			
-			TIM10->CCR1 = (TIM10->ARR * (key_selected / 0x000A));
+			duty = (uint16_t) (TIM10->ARR * (key_selected / 0x000A)); // duty = ARR * (0:10 / 10)
+			TIM10->CCR1 = duty;
 			GPIOC->ODR &= ~(0x000F);
 			GPIOC->ODR |= key_selected;
 		}
@@ -172,15 +175,11 @@ void EXTI1_IRQHandler(void) {
 /* */
 void TIM10_IRQHandler(void) {
 	
-	GPIOC->ODR &= 0x00;
-	if ((GPIOA->ODR & 0x0040) == 0x0040) {
-		GPIOA->ODR &= ~0x0040;
-	} else {
-		GPIOA->ODR |= 0x0040;
-	}
 	TIM10->SR &= ~TIM_SR_UIF;
+	TIM10->SR &= ~TIM_SR_CC1IF;
 	EXTI->PR |= 0x000002; // clears interrupt pending bits
 	NVIC_ClearPendingIRQ(TIM10_IRQn);
+	
 }
 
 /*------------------------------------------------*/
@@ -190,12 +189,10 @@ int main(void) {
 
 	pinSetup(); // Configure GPIO pins
 	interruptSetup(); // Configure interrupt pins
-	key_selected = 0xFFFF;
-	
-	timer_interrupts = 0;
-	while (key_selected != 0x0000) {} // do nothing
-
+	key_selected = 0x0005;
 	timerSetup();	// Configure timer pins
+	
+	TIM10->CCR1 = (uint16_t) (TIM10->ARR * (key_selected / 0x000A));
 	TIM10->CR1 |= TIM_CR1_CEN; 
 	
  /* Endless loop */
